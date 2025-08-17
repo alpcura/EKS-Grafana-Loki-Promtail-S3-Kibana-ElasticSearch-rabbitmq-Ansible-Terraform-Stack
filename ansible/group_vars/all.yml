@@ -1,0 +1,59 @@
+region: us-east-1
+cluster_name: project3-eks
+
+# S3 bucket ve IRSA rolü (Terraform'dan)
+loki_bucket_name: project3-logs-sbx
+loki_irsa_role_arn: arn:aws:iam::<accountid>:role/project3-sbx-loki-irsa
+
+# EBS CSI addon IRSA rolü (Terraform'dan)
+ebs_csi_role_arn: arn:aws:iam::<accountid>:role/project3-sbx-ebs-csi-irsa
+
+# ALB controller IRSA rolü (Terraform'dan)
+alb_controller_role_arn: arn:aws:iam::<accountid>:role/project3-eks-alb-controller
+
+# İsteğe bağlı: StorageClass adı (gp3-csi dosyasını default yaptık)
+storage_class_name: gp3-csi
+
+# RabbitMQ kimlik bilgileri
+rabbitmq:
+  username: user
+  password: password
+
+# -------------------------------
+# Küçük cluster profili
+# -------------------------------
+small_cluster: true
+loki_replica_count: 1
+
+loki_read_requests:
+  cpu: "50m"
+  memory: "256Mi"
+loki_read_limits:
+  cpu: "300m"
+  memory: "512Mi"
+
+loki_write_requests:
+  cpu: "100m"
+  memory: "512Mi"
+loki_write_limits:
+  cpu: "500m"
+  memory: "1Gi"
+
+loki_backend_requests:
+  cpu: "100m"
+  memory: "512Mi"
+loki_backend_limits:
+  cpu: "500m"
+  memory: "1Gi"
+
+loki_cache_requests:
+  cpu: "50m"
+  memory: "128Mi"
+loki_cache_limits:
+  cpu: "200m"
+  memory: "256Mi"
+
+# PDB/affinity ayarları
+loki_enable_pdb: false
+loki_soft_affinity: true
+loki_initial_delay: 60
