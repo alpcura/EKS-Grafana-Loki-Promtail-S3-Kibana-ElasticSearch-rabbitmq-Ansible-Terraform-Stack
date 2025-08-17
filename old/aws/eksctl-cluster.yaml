@@ -1,0 +1,26 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: project3-eks
+  region: us-east-1
+  version: "1.29"
+
+iam:
+  withOIDC: true
+
+# VPC/subnet belirtmiyoruz -> eksctl otomatik oluşturur
+
+managedNodeGroups:
+  - name: ng-general
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 4
+    privateNetworking: true
+    labels: { nodegroup: general }
+    ssh: { enableSsm: true }
+
+cloudWatch:
+  clusterLogging:
+    enableTypes: ["api","audit","authenticator","controllerManager","scheduler"]

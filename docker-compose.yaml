@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: appuser
+      RABBITMQ_DEFAULT_PASS: 123123
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    image: api-service             
+    container_name: api
+    environment:
+      APP_PORT: "8080"
+      QUEUE_NAME: tasks
+      RABBITMQ_URL: amqp://appuser:123123@rabbitmq:5672/
+    ports:
+      - "8080:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: worker-service          
+    container_name: worker
+    environment:
+      QUEUE_NAME: tasks
+      RABBITMQ_URL: amqp://appuser:123123@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped

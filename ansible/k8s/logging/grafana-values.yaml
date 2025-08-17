@@ -1,0 +1,7 @@
+adminUser: admin
+adminPassword: admin123
+service: { type: ClusterIP }
+sidecar:
+  datasources:
+    enabled: true
+    label: grafana_datasource

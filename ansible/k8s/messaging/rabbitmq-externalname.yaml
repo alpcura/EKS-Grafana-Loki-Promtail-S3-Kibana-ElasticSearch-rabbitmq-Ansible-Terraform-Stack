@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: prod-api
+spec:
+  type: ExternalName
+  externalName: rabbitmq.messaging.svc.cluster.local

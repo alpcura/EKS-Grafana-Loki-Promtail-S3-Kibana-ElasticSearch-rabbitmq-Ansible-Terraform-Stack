@@ -1,0 +1,25 @@
+# Grafana Promtail (helm chart: grafana/promtail)
+# K8s loglarını toplayıp Loki'ye yollar.
+config:
+  server:
+    http_listen_port: 3101
+    grpc_listen_port: 0
+  clients:
+    - url: http://loki.logging.svc.cluster.local:3100/loki/api/v1/push
+  positions:
+    filename: /run/promtail/positions.yaml
+  scrape_configs:
+    - job_name: kubernetes-pods
+      kubernetes_sd_configs:
+        - role: pod
+      pipeline_stages:
+        - cri: {}
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_node_name]
+          target_label: node
+        - source_labels: [__meta_kubernetes_namespace]
+          target_label: namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          target_label: pod
+        - source_labels: [__meta_kubernetes_container_name]
+          target_label: container

@@ -1,0 +1,102 @@
+deploymentMode: Distributed
+
+global:
+  storageClass: "gp3-csi"
+
+loki:
+  # Tüm Loki config'i structuredConfig altında (chart 6.36 bunu bekliyor)
+  structuredConfig:
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      replication_factor: 1
+
+    # ---- S3 erişimi ----
+    storage_config:
+      aws:
+        s3: "s3://project3-logs-sbx"
+        region: "us-east-1"
+        s3forcepathstyle: true
+
+    # ---- Şema (TSDB) ----
+    schema_config:
+      configs:
+        - from: "2025-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+  # Bazı şablonlar için legacy bucketNames (zararsız)
+  storage:
+    type: s3
+    bucketNames:
+      chunks: "project3-logs-sbx"
+      ruler:  "project3-logs-sbx"
+      admin:  "project3-logs-sbx"
+
+# ---- Gateway ----
+gateway:
+  enabled: true
+
+# ---- Simple/Scalable hedefleri KAPAT ----
+read:
+  enabled: false
+  replicas: 0
+
+write:
+  enabled: false
+  replicas: 0
+
+backend:
+  enabled: false
+  replicas: 0
+
+# ---- Küçük cluster için tek ingester STS (zone-aware kapalı) ----
+# ingester:
+#   zoneAwareReplication:
+#     enabled: false
+# ---- Zorunlu mikroservis replikaları (min 1) ----
+distributor:
+  replicas: 1
+
+
+structuredConfig:
+  ingester:
+    # küçük test için; prod'da büyüt
+    chunk_idle_period: 1m
+    max_chunk_age: 1m
+    flush_check_period: 30s
+
+ingester:
+  replicas: 1
+  zoneAwareReplication:
+    enabled: false
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "gp3-csi"
+
+querier:
+  replicas: 1
+
+queryFrontend:
+  replicas: 1
+
+queryScheduler:
+  replicas: 1
+
+indexGateway:
+  replicas: 1
+
+compactor:
+  replicas: 1
+
+
+# basitleştirme
+chunksCache:  { enabled: false }
+resultsCache: { enabled: false }
+ruler:        { enabled: false }

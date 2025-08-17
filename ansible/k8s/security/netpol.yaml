@@ -1,0 +1,81 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: prod-api
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress","Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-rmq-and-internal
+  namespace: prod-api
+spec:
+  podSelector:
+    matchLabels: { app: api }
+  policyTypes: ["Ingress","Egress"]
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels: { name: messaging }
+    ports:
+    - { port: 5672, protocol: TCP }
+  - to: []   # cluster DNS vb.
+    ports:
+    - { port: 53, protocol: UDP }
+  ingress:
+  - from:
+    - namespaceSelector: {}   # ingress ALB -> api service (cluster içi)
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-promtail-to-loki
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - port: 3100   # gateway http
+        - port: 9095   # grpc (iç haberleşme, dursun)
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - port: 3100
+        - port: 9095
+    # S3'e çıkış gerekiyorsa egress'i şimdilik açalım (sıkılaştırmayı sonra yaparsın)
+    - {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-for-promtail
+  namespace: logging
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: promtail
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }

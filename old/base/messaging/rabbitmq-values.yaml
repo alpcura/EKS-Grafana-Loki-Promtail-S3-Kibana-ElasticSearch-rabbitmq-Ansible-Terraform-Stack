@@ -1,0 +1,9 @@
+auth:
+  username: "appuser"
+  password: "123123"
+
+service:
+  type: ClusterIP
+
+persistence:
+  enabled: false
