@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rabbitmq-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: rabbitmq
+    helm:
+      values: |
+        auth:
+          username: appuser
+          password: apppassword
+        service:
+          type: ClusterIP
+        persistence:
+          enabled: false
+        ingress:
+          enabled: true
+          ingressClassName: alb
+          annotations:
+            alb.ingress.kubernetes.io/scheme: internet-facing
+            alb.ingress.kubernetes.io/target-type: ip
+            alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+          path: /
+          pathType: Prefix
+          servicePort: 15672   # management UI
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: messaging
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
