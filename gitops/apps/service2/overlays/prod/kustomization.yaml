@@ -1,8 +1,0 @@
-namespace: worker
-resources:
-  - ../../base
-patchesStrategicMerge:
-  - replicas.yaml
-images:
-  - name: mericalpp/eks-go-rmq-worker
-    newTag: dev-1.0.0
