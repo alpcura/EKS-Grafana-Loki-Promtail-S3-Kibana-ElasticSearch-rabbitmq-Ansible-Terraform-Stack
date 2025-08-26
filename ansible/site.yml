@@ -3,537 +3,195 @@
 
   vars_files:
     - "{{ playbook_dir }}/group_vars/all.yml"
-    
 
   vars:
     aws_profile: sandbox
     kubeconfig_path: "{{ playbook_dir }}/.kubeconfig"
-    terraform_dir: "{{ playbook_dir }}/../terraform" 
+    terraform_dir: "{{ playbook_dir }}/../terraform"
+    gitops_dir: "{{ playbook_dir }}/../gitops"
+    bootstrap_envs: ["dev"]
 
   environment:
     AWS_PROFILE: "{{ aws_profile }}"
-    AWS_REGION: "{{ region }}"
+    AWS_REGION: "{{ region | default('') }}"
     AWS_SDK_LOAD_CONFIG: "1"
     KUBECONFIG: "{{ kubeconfig_path }}"
 
   tasks:
-   
-    # ---------- Araç / kimlik kontrol ----------
-    - name: Kimlik ve versiyon kontrolü
-      ansible.builtin.command: "{{ item }}"
+
+        # ----- Namespaces (uygulama + platform) -----
+    - name: Create platform/application namespaces
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ item }}"
       loop:
-        - "aws --version"
-        - "aws sts get-caller-identity --profile {{ aws_profile }}"
-        - "kubectl version --client --output=yaml"
-        - "helm version --short"
-      register: check_tools
+        - prod-api
+        - worker
+        - messaging
+        - logging
+        - api
+        - project-3ui
+        - rabbitmq-ui
+
+    # ----- TF outputs -----
+    - name: Read all TF outputs (JSON)
+      ansible.builtin.command: terraform output -json
+      args: { chdir: "{{ terraform_dir }}" }
+      register: tf_out
       changed_when: false
 
-    - debug: var=check_tools.results
+    - name: Parse TF outputs to facts
+      ansible.builtin.set_fact:
+        TF_CLUSTER_NAME:  "{{ (tf_out.stdout | from_json).cluster_name.value }}"
+        TF_REGION:        "{{ (tf_out.stdout | from_json).region.value }}"
+        TF_VPC_ID:        "{{ (tf_out.stdout | from_json).vpc_id.value }}"
+        TF_ALB_ROLE_ARN:  "{{ (tf_out.stdout | from_json).alb_controller_role_arn.value }}"
+        TF_EBS_ROLE_ARN:  "{{ (tf_out.stdout | from_json).ebs_csi_role_arn.value }}"
+        TF_LOKI_ROLE_ARN: "{{ (tf_out.stdout | from_json).loki_irsa_role_arn.value }}"
+        TF_LOKI_BUCKET:   "{{ (tf_out.stdout | from_json).loki_bucket_name.value }}"
 
-    - name: Cluster status check (fail fast)
-      ansible.builtin.command: >
-        aws eks describe-cluster
-        --name {{ cluster_name }}
-        --region {{ region }}
-        --profile {{ aws_profile }}
-        --query 'cluster.status' --output text
-      register: cluster_status
-      failed_when: cluster_status.rc != 0
-      changed_when: false
-
-    - name: Kubeconfig yaz (space-safe)
+    # ----- kubeconfig -----
+    - name: Write kubeconfig
       ansible.builtin.command:
         argv:
           - aws
           - eks
           - update-kubeconfig
           - --name
-          - "{{ cluster_name }}"
+          - "{{ TF_CLUSTER_NAME }}"
           - --region
-          - "{{ region }}"
+          - "{{ TF_REGION }}"
           - --profile
           - "{{ aws_profile }}"
           - --kubeconfig
           - "{{ kubeconfig_path }}"
       changed_when: false
 
-    # ---------- Namespace / güvenlik ----------
-    - name: Create namespaces (k8s/namespace.yaml)
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/namespace.yaml"
-
-    - name: RBAC
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/security/rbac.yaml"
-
-    - name: NetworkPolicies
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/security/netpol.yaml"
-
-    # ==================================================
-    # =============== EBS CSI / STORAGE ================
-    # ==================================================
-    - name: Update EBS CSI addon to use IRSA role
+    # ----- Storage (EBS-CSI + default SC) -----
+    - name: Bind IRSA to aws-ebs-csi-driver addon
       ansible.builtin.command:
         argv:
           - aws
           - eks
           - update-addon
           - --cluster-name
-          - "{{ cluster_name }}"
+          - "{{ TF_CLUSTER_NAME }}"
           - --region
-          - "{{ region }}"
+          - "{{ TF_REGION }}"
           - --addon-name
           - aws-ebs-csi-driver
           - --service-account-role-arn
-          - "{{ ebs_csi_role_arn }}"
+          - "{{ TF_EBS_ROLE_ARN }}"
       changed_when: true
       failed_when: false
 
-    - name: Create/Update GP3 CSI StorageClass (default)
+    - name: Ensure gp3-csi StorageClass is default
       kubernetes.core.k8s:
         state: present
-        src: k8s/storage/gp3-csi.yaml
+        src: "{{ playbook_dir }}/k8s/storage/gp3-csi.yaml"
 
-    # ==================================================
-    # ===================== LOKI =======================
-    # ==================================================
-    - name: Read loki_bucket_name from Terraform output
-      ansible.builtin.command: terraform output -raw loki_bucket_name
-      args:
-        chdir: "{{ terraform_dir }}"
-      register: tf_loki_bucket_out
-      changed_when: false
-      failed_when: tf_loki_bucket_out.rc != 0 or (tf_loki_bucket_out.stdout | trim) == ""
+    # ----- Namespaces (profesyonel minimum set) -----
+    - name: Create platform/application namespaces
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata: { name: "{{ item }}" }
+      loop:
+        - prod-api
+        - worker
+        - messaging
+        - logging
 
-    - name: Set loki_bucket_name fact from Terraform
-      ansible.builtin.set_fact:
-        loki_bucket_name: "{{ tf_loki_bucket_out.stdout | trim }}"
-    
-    - name: Assert required vars for Loki
-      ansible.builtin.assert:
-        that:
-          - loki_bucket_name is defined and (loki_bucket_name | length) > 0
-          - loki_irsa_role_arn is defined and (loki_irsa_role_arn | length) > 0
-          - region is defined and (region | length) > 0
-        fail_msg: "loki_bucket_name / loki_irsa_role_arn / region boş olamaz."
-
-    - name: Loki derived vars (no-jinja in template)
-      ansible.builtin.set_fact:
-        loki_replicas: "{{ (small_cluster | default(true)) | ternary(loki_replica_count, 2) }}"
-        loki_pdb_enabled: "{{ loki_enable_pdb | default(false) }}"
-        loki_affinity_empty: "{}"
-
-    - name: Render Loki values from template
-      ansible.builtin.template:
-        src: k8s/logging/loki-values.tpl.yaml
-        dest: k8s/logging/loki-values.rendered.yaml
-        mode: '0644'
-
-    - name: Show first lines of rendered (debug)
-      ansible.builtin.shell: "sed -n '1,120p' k8s/logging/loki-values.rendered.yaml"
-      register: loki_render_preview
-      changed_when: false
-
-    - debug: var=loki_render_preview.stdout
-
-    - name: Assert rendered has structuredConfig.schema_config
-      vars:
-        loki_values: "{{ lookup('file', 'k8s/logging/loki-values.rendered.yaml') | from_yaml }}"
-      ansible.builtin.assert:
-        that:
-          - loki_values.loki is defined
-          - loki_values.loki.structuredConfig is defined
-          - loki_values.loki.structuredConfig.schema_config is defined
-        fail_msg: "Rendered içinde loki.structuredConfig.schema_config YOK! tpl’yi kontrol et."
- 
- 
-
-    - name: Helm uninstall loki if exists
-      ansible.builtin.command: helm uninstall loki -n logging
-      register: loki_uninstall
+    # ----- Argo CD -----
+    - name: Add argo helm repo
+      ansible.builtin.command: helm repo add argo https://argoproj.github.io/argo-helm
       failed_when: false
-      changed_when: loki_uninstall.rc == 0
-
-    - name: Force delete old Loki PVCs (remove finalizers if stuck)
-      ansible.builtin.shell: |-
-        set -euo pipefail
-        ns=logging
-
-        # Sadece Loki'ye ait PVC'ler
-        pvcs=$(kubectl -n "$ns" get pvc -l app.kubernetes.io/instance=loki -o name 2>/dev/null || true)
-
-        if [ -n "$pvcs" ]; then
-          # Finalizer varsa temizle ([] veriyoruz)
-          for p in $pvcs; do
-            kubectl -n "$ns" patch "$p" --type=merge -p '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
-          done
-
-          # Sil ve beklemeden çık
-          kubectl -n "$ns" delete $pvcs --ignore-not-found --wait=false || true
-
-          # En fazla 60 sn bekle (3 sn aralık)
-          for i in $(seq 1 20); do
-            left=$(kubectl -n "$ns" get pvc -l app.kubernetes.io/instance=loki --no-headers 2>/dev/null | wc -l | tr -d ' ')
-            [ "$left" = "0" ] && break
-            sleep 3
-          done
-        fi
-      args:
-        executable: /bin/bash
-      changed_when: true
-      failed_when: false
-
-    - name: Install Loki (Distributed) with IRSA (NO WAIT)
-      ansible.builtin.command:
-        argv:
-          - helm
-          - upgrade
-          - --install
-          - loki
-          - grafana/loki
-          - -n
-          - logging
-          - --create-namespace
-          - -f
-          - k8s/logging/loki-values.rendered.yaml
-          - --set
-          - test.enabled=false
-          - --set
-          - serviceAccount.create=true
-          - --set-json
-          - 'serviceAccount.annotations={"eks.amazonaws.com/role-arn":"{{ loki_irsa_role_arn }}"}'
-          - --timeout
-          - 20m
-      register: loki_install
-      changed_when: true
-
-    - name: Wait until Loki PVCs are Bound
-      ansible.builtin.shell: |
-        ns=logging
-        for i in {1..60}; do
-          notbound=$(kubectl -n $ns get pvc -l app.kubernetes.io/instance=loki \
-            -o jsonpath='{range .items[*]}{.metadata.name} {.status.phase}{"\n"}{end}' | awk '$2!="Bound"{print $1}')
-          if [ -z "$notbound" ]; then exit 0; fi
-          sleep 5
-        done
-        echo "PVCs not bound in time" && exit 1
-      register: pvc_wait
       changed_when: false
-      failed_when: pvc_wait.rc != 0
 
-    - name: Wait until Loki distributed components are created (deploy OR sts)
-      ansible.builtin.shell: |
-        for i in {1..30}; do
-          kubectl -n logging get deploy,sts | grep loki && exit 0
-          sleep 10
-        done
-        exit 1
-      register: loki_components
-      retries: 30
-      delay: 10
-      until: loki_components.rc == 0
-
-    - name: Rollout wait for read/write/backend (deploy)
-      ansible.builtin.shell: |
-        set -e
-        ns=logging
-        for d in read write backend; do
-          if kubectl -n $ns get deploy -l app.kubernetes.io/name=loki,app.kubernetes.io/component=$d --no-headers 2>/dev/null | grep -q .; then
-            name=$(kubectl -n $ns get deploy -l app.kubernetes.io/name=loki,app.kubernetes.io/component=$d -o jsonpath='{.items[0].metadata.name}')
-            kubectl -n $ns rollout status deploy/$name --timeout=600s
-          fi
-        done
-      changed_when: false
-      failed_when: false
-
-    - name: Rollout wait for read/write/backend (sts)
-      ansible.builtin.shell: |
-        set -e
-        ns=logging
-        for s in read write backend; do
-          if kubectl -n $ns get sts -l app.kubernetes.io/name=loki,app.kubernetes.io/component=$s --no-headers 2>/dev/null | grep -q .; then
-            name=$(kubectl -n $ns get sts -l app.kubernetes.io/name=loki,app.kubernetes.io/component=$s -o jsonpath='{.items[0].metadata.name}')
-            kubectl -n $ns rollout status sts/$name --timeout=600s
-          fi
-        done
-      changed_when: false
-      failed_when: false
-    # ==================================================
-    # ============== AWS LB Controller =================
-    # ==================================================
-    - name: Get VPC ID of the EKS cluster
+    - name: Install/upgrade Argo CD
       ansible.builtin.command: >
-        aws eks describe-cluster
-        --name {{ cluster_name }}
-        --region {{ region }}
-        --query 'cluster.resourcesVpcConfig.vpcId'
-        --output text
-      register: vpc_out
-      changed_when: false
-
-    - name: Install/upgrade AWS Load Balancer Controller (fixed)
-      ansible.builtin.command:
-        argv:
-          - helm
-          - upgrade
-          - --install
-          - aws-load-balancer-controller
-          - eks/aws-load-balancer-controller
-          - -n
-          - kube-system
-          - --create-namespace
-          - --wait
-          - --wait-for-jobs
-          - --set
-          - clusterName={{ cluster_name }}
-          - --set
-          - region={{ region }}
-          - --set
-          - vpcId={{ vpc_out.stdout }}
-          - --set
-          - serviceAccount.create=true
-          - --set
-          - serviceAccount.name=aws-load-balancer-controller
-          - --set-json
-          - 'serviceAccount.annotations={"eks.amazonaws.com/role-arn":"{{ alb_controller_role_arn }}"}'
+        helm upgrade --install argocd argo/argo-cd
+        -n argocd --create-namespace --wait
       changed_when: true
-
-    - name: Wait for ALB controller rollout
+        # Kontrolcü podlarının Ready olmasını bekle (Deployment/StatefulSet fark etmeksizin)
+    - name: Wait application-controller pods Ready
       ansible.builtin.command:
         argv:
           - kubectl
           - -n
-          - kube-system
+          - argocd
+          - wait
+          - --for=condition=Ready
+          - pod
+          - -l
+          - app.kubernetes.io/name=argocd-application-controller
+          - --timeout=600s
+      changed_when: false
+
+    # Sunucu (UI/API) için rollout bekle
+    - name: Wait argocd-server rollout
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - -n
+          - argocd
           - rollout
           - status
-          - deploy/aws-load-balancer-controller
-          - --timeout=180s
+          - deploy/argocd-server
+          - --timeout=600s
       changed_when: false
 
-    - name: Wait for webhook service endpoints
-      ansible.builtin.shell: |
-        kubectl -n kube-system get endpoints aws-load-balancer-webhook-service -o jsonpath='{.subsets[0].addresses[0].ip}'
-      register: alb_webhook_ep
-      until: alb_webhook_ep.stdout is defined and alb_webhook_ep.stdout|length > 0
-      retries: 18
-      delay: 5
-      changed_when: false
-
-    # === IRSA SA annotation (Terraform'dan ARN okuyup zorla yaz) ===
-    - name: Read alb_controller_role_arn from Terraform output
-      ansible.builtin.command: terraform output -raw alb_controller_role_arn
-      args: { chdir: "{{ terraform_dir }}" }
-      register: tf_alb_role_arn
-      changed_when: false
-
-    - name: Annotate SA with role arn (idempotent)
+    - name: Wait application-controller ready
       ansible.builtin.command: >
-        kubectl -n kube-system annotate sa aws-load-balancer-controller
-        eks.amazonaws.com/role-arn={{ tf_alb_role_arn.stdout | trim }} --overwrite
-      changed_when: true
-
-    - name: Restart ALB controller
-      ansible.builtin.command: >
-        kubectl -n kube-system rollout restart deploy/aws-load-balancer-controller
-      changed_when: true
-
-    - name: Wait ALB controller healthy
-      ansible.builtin.command: >
-        kubectl -n kube-system rollout status deploy/aws-load-balancer-controller --timeout=180s
+        kubectl -n argocd rollout status deploy/argocd-application-controller --timeout=300s
       changed_when: false
 
-      
-     # ==================================================
-    # =============== RabbitMQ & Grafana ===============
-    # ==================================================
-    - name: Add Bitnami repo
-      ansible.builtin.command: helm repo add bitnami https://charts.bitnami.com/bitnami
-      register: bitnami_repo
-      failed_when: false
-      changed_when: "'has been added' in (bitnami_repo.stdout | default(''))"
-
-    - name: Install/upgrade RabbitMQ (messaging ns)
+    - name: Wait repo-server ready
       ansible.builtin.command: >
-        helm upgrade --install rabbitmq bitnami/rabbitmq -n messaging --create-namespace
-        -f k8s/messaging/rabbitmq-values.yaml --wait
-      changed_when: true
-
-
-# ---- RabbitMQ URL secrets (for API & Worker) ----
-# ---- RabbitMQ URL secrets (API & Worker) ----
-# 1) Bildiğimiz default cred'leri set et (helm'den gelen varsa override ederiz)
-    - name: Set default RabbitMQ creds
-      ansible.builtin.set_fact:
-        rmq_user: "appuser"
-        rmq_pass: "apppassword"
-
-# 2) Helm values varsa onlar ile override et
-    - name: Read RabbitMQ helm values as JSON
-      ansible.builtin.command: helm get values rabbitmq -n messaging -o json
-      register: rmq_values_json
-      changed_when: false
-      failed_when: false
-
-    - name: Override creds from helm values (if present)
-      ansible.builtin.set_fact:
-        rmq_user: "{{ ((rmq_values_json.stdout | from_json).auth.username) | default(rmq_user) }}"
-        rmq_pass: "{{ ((rmq_values_json.stdout | from_json).auth.password) | default(rmq_pass) }}"
-      when: rmq_values_json.rc == 0 and (rmq_values_json.stdout | length) > 0
-
-    # 3) API ve Worker namespace'lerine URL secret oluştur
-    - name: Ensure rabbitmq-url secret in prod-api
-      kubernetes.core.k8s:
-        state: present
-        api_version: v1
-        kind: Secret
-        namespace: prod-api
-        name: rabbitmq-url
-        resource_definition:
-          type: Opaque
-          stringData:
-            url: "amqp://{{ rmq_user }}:{{ rmq_pass }}@rabbitmq.messaging.svc.cluster.local:5672/"
-
-    - name: Ensure rabbitmq-url secret in worker
-      kubernetes.core.k8s:
-        state: present
-        api_version: v1
-        kind: Secret
-        namespace: worker
-        name: rabbitmq-url
-        resource_definition:
-          type: Opaque
-          stringData:
-            url: "amqp://{{ rmq_user }}:{{ rmq_pass }}@rabbitmq.messaging.svc.cluster.local:5672/"
-
-    # (Opsiyonel) Pod'lar secret'ı hemen alsın diye rollout restart
-    # - name: Restart API and Worker to pick up secret
-    #   ansible.builtin.shell: |
-    #     kubectl -n prod-api rollout restart deploy/api
-    #     kubectl -n worker   rollout restart deploy/worker
-    #   changed_when: true
-    
-
-    - name: Add Grafana repo
-      ansible.builtin.command: helm repo add grafana https://grafana.github.io/helm-charts
-      register: grafana_repo
-      failed_when: false
-      changed_when: "'has been added' in (grafana_repo.stdout | default(''))"
-
-    - name: Promtail
-      ansible.builtin.command: >
-        helm upgrade --install promtail grafana/promtail -n logging
-        -f k8s/logging/promtail-values.yaml --wait
-      changed_when: true
-
-    - name: Grafana
-      ansible.builtin.command: >
-        helm upgrade --install grafana grafana/grafana -n logging
-        -f k8s/logging/grafana-values.yaml --wait
-      changed_when: true
-
-    - name: Grafana datasource CM
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/logging/grafana-ds-cm.yaml"
-
-    # ---- API / Worker ----
-    - name: API deploy
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/prod-api/api-deploy.yaml"
-
-    - name: API service
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/prod-api/api-svc.yaml"
-
-    - name: Worker deploy
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/worker/worker-deploy.yaml"
-
-    # ---- Rollout waits (sağlık) ----
-    - name: Wait API rollout
-      ansible.builtin.command: kubectl -n prod-api rollout status deploy/api --timeout=300s
+        kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=300s
       changed_when: false
 
-    - name: Wait Worker rollout
-      ansible.builtin.command: kubectl -n worker rollout status deploy/worker --timeout=300s
-      changed_when: false 
-
-
-    # ==================================================
-    # =================== Ingressler ===================
-    # ==================================================
-    - name: API Ingress
-      kubernetes.core.k8s:
-        state: present
-        src: "k8s/prod-api/api-ingress.yaml"
-
-    - name: Grafana Ingress (internet-facing)
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: project3-ui
-            namespace: logging
-            annotations:
-              alb.ingress.kubernetes.io/scheme: internet-facing
-              alb.ingress.kubernetes.io/target-type: ip
-              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-          spec:
-            ingressClassName: alb
-            rules:
-            - http:
-                paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: grafana
-                      port: { number: 80 }
-
-    - name: RabbitMQ UI Ingress
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: networking.k8s.io/v1
-          kind: Ingress
-          metadata:
-            name: rabbitmq-ui
-            namespace: messaging
-            annotations:
-              alb.ingress.kubernetes.io/scheme: internet-facing
-              alb.ingress.kubernetes.io/target-type: ip
-              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-          spec:
-            ingressClassName: alb
-            rules:
-            - http:
-                paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: rabbitmq
-                      port: { number: 15672 }
-
-    - name: Show ALB hostnames
-      ansible.builtin.shell: |
-        for ns in prod-api logging messaging; do
-          for ing in $(kubectl -n $ns get ing -o name 2>/dev/null | awk -F'/' '{print $2}'); do
-            host=$(kubectl -n $ns get ing $ing -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-            echo "$ns/$ing => ${host:-<pending>}"
-          done
-        done
-      register: alb_dns
+    - name: Wait argocd-server ready
+      ansible.builtin.command: >
+        kubectl -n argocd rollout status deploy/argocd-server --timeout=300s
       changed_when: false
 
-    - debug: var=alb_dns.stdout_lines
+    # ----- Placeholder doldurma (envs/dev içindeki dosyalar) -----
+    - name: Fill placeholders in platform-alb.yaml
+      ansible.builtin.replace:
+        path: "{{ gitops_dir }}/envs/dev/platform-alb.yaml"
+        regexp: "{{ item.key }}"
+        replace: "{{ item.value }}"
+      loop:
+        - { key: "<ALB_CONTROLLER_ROLE_ARN>", value: "{{ TF_ALB_ROLE_ARN }}" }
+        - { key: "<EKS_CLUSTER_NAME>",        value: "{{ TF_CLUSTER_NAME }}" }
+        - { key: "<AWS_REGION>",              value: "{{ TF_REGION }}" }
+        - { key: "<VPC_ID>",                  value: "{{ TF_VPC_ID }}" }
+
+    - name: Fill placeholders in platform-loki.yaml
+      ansible.builtin.replace:
+        path: "{{ gitops_dir }}/envs/dev/platform-loki.yaml"
+        regexp: "{{ item.key }}"
+        replace: "{{ item.value }}"
+      loop:
+        - { key: "<LOKI_IRSA_ROLE_ARN>", value: "{{ TF_LOKI_ROLE_ARN }}" }
+        - { key: "<LOKI_BUCKET_NAME>",   value: "{{ TF_LOKI_BUCKET }}" }
+        - { key: "<AWS_REGION>",         value: "{{ TF_REGION }}" }
+
+    # ----- Root App apply (gitops/envs/dev/_root-app.yaml) -----
+    - name: Apply root app (dev)
+      kubernetes.core.k8s:
+        state: present
+        namespace: argocd
+        src: "{{ gitops_dir }}/envs/dev/_root-app.yaml"
+
+    # ----- Görünürlük -----
+    - name: Show Argo apps
+      ansible.builtin.command: kubectl -n argocd get applications
+      changed_when: false
