@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels: { app: api }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata: { labels: { app: api } }
+    spec:
+      serviceAccountName: api-sa
+      containers:
+        - name: api
+          image: mericalpp/eks-go-rmq:latest
+          ports: [{ containerPort: 8080 }]
+          env:
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef: { name: rabbitmq-url, key: url }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 5

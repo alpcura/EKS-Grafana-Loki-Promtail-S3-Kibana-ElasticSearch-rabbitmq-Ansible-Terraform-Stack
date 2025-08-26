@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: service-1-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/alpcura/EKS-Grafana-Loki-Promtail-S3-Kibana-ElasticSearch-rabbitmq-Ansible-Terraform-Stack.git
+    targetRevision: HEAD
+    path: gitops/apps/service-1/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod-api
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: ["/spec/replicas"]  # HPA drift'i görmezden gel
