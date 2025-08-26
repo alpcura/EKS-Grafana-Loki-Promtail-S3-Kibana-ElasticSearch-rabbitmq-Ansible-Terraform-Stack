@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 6.6.5
+    helm:
+      values: |
+        loki:
+          storage:
+            type: s3
+            bucketNames:
+              chunks: ${LOKI_BUCKET_NAME}
+              ruler: ${LOKI_BUCKET_NAME}
+              admin: ${LOKI_BUCKET_NAME}
+            s3:
+              s3: s3://${LOKI_BUCKET_NAME}
+              bucketnames: ${LOKI_BUCKET_NAME}
+              region: ${AWS_REGION}
+          schemaConfig:
+            configs:
+            - from: 2024-01-01
+              store: boltdb-shipper
+              object_store: s3
+              schema: v13
+              index:
+                prefix: loki_index_
+                period: 24h
+        serviceAccount:
+          create: true
+          annotations:
+            eks.amazonaws.com/role-arn: "${LOKI_IRSA_ROLE_ARN}"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
