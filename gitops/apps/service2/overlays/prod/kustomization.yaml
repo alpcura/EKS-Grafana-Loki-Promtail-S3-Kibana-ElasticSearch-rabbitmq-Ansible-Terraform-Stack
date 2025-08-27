@@ -1,0 +1,6 @@
+namespace: worker
+resources:
+  - ../../base
+  - rabbitmq-url-secret.yaml
+patchesStrategicMerge:
+  - replicas.yaml
