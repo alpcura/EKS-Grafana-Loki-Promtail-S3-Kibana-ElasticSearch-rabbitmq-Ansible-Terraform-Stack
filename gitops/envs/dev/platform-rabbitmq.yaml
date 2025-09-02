@@ -82,7 +82,7 @@ spec:
             alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
           path: /
           pathType: Prefix
-          hostname: rabbitmq.dev.local
+          hostname: ""
 
   syncPolicy:
     automated:
