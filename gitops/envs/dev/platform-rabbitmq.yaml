@@ -10,8 +10,9 @@ spec:
     chart: rabbitmq
     targetRevision: 15.3.2
     helm:
+      releaseName: rabbitmq
       values: |
-        fullnameOverride: rabbitmq      # <— ÖNEMLİ: servis adı rabbitmq olsun
+        fullnameOverride: rabbitmq
         auth:
           username: appuser
           password: apppassword
@@ -27,4 +28,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+    - CreateNamespace=true
