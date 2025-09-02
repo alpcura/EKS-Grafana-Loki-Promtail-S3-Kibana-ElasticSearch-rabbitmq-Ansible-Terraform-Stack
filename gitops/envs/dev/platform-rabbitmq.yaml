@@ -10,44 +10,58 @@ spec:
     chart: rabbitmq
     targetRevision: 15.3.2
     helm:
+      releaseName: rabbitmq
       values: |
-        fullnameOverride: rabbitmq
-
+        # --- Kimlik (demo)
         auth:
           username: appuser
           password: apppassword
 
-        service:
-          type: ClusterIP
-
+        # --- Disk kapalı (demo)
         persistence:
           enabled: false
 
-        # >>> ÖNEMLİ: Bitnami imajları GHCR'de
+        # --- Tüm imajları GHCR'den çek + doğrulamayı aç
         global:
           imageRegistry: ghcr.io
           security:
-            allowInsecureImages: true   # chart'ın imaj doğrulamasını geçmesi için
+            allowInsecureImages: true
 
+        # --- Ana imajı da açıkça GHCR'a sabitle (init container'ı da etkiler)
         image:
           registry: ghcr.io
           repository: bitnami/rabbitmq
           tag: 4.0.6-debian-12-r3
 
+        # --- Kaynakları makul tut
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+        # --- Ingress (AWS ALB)
+        service:
+          type: ClusterIP
+          ports:
+            amqp: 5672
+            manager: 15672
         ingress:
           enabled: true
           ingressClassName: alb
           hostname: rabbitmq.dev.local
           path: /
-          pathType: Prefix
-          servicePort: manager
           annotations:
             alb.ingress.kubernetes.io/scheme: internet-facing
             alb.ingress.kubernetes.io/target-type: ip
             alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+
   destination:
     server: https://kubernetes.default.svc
     namespace: messaging
+
   syncPolicy:
     automated:
       prune: true
