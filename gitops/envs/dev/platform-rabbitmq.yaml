@@ -50,6 +50,27 @@ spec:
           pathType: Prefix
           hostname: rabbitmq.dev.local
 
+        # ---- Probeları daha toleranslı yap
+        startupProbe:
+          enabled: true
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 60
+
+        readinessProbe:
+          enabled: true
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+
+        livenessProbe:
+          enabled: true
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 20
+          failureThreshold: 6
+
   syncPolicy:
     automated:
       prune: true
