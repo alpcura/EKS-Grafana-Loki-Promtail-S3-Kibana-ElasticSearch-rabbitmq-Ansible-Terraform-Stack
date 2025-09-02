@@ -12,32 +12,36 @@ spec:
     helm:
       releaseName: rabbitmq
       values: |
-        # --- Servis/PVC adları sabit kalsın
+        # ---- İsimleri sabitle
         fullnameOverride: rabbitmq
 
-        # --- Auth
-        auth:
-          username: appuser
-          password: apppassword
-
-        # --- Servis tipi
-        service:
-          type: ClusterIP
-
-        # --- Persist kapalı (demo)
-        persistence:
-          enabled: false
-
-        # --- Tüm imajları GHCR'den çek
+        # ---- Tüm imajları GHCR'den çek
         global:
           imageRegistry: ghcr.io
 
-        # --- Ana RabbitMQ imajını da net sabitle
+        # ---- Ana container imajını da net sabitle
         image:
           registry: ghcr.io
           repository: bitnami/rabbitmq
           tag: 4.0.6-debian-12-r3
+          pullPolicy: IfNotPresent
 
+        # ---- Yetkilendirme
+        auth:
+          username: appuser
+          password: apppassword
+
+        # ---- Servis
+        service:
+          type: ClusterIP
+
+        # ---- Demo için kalıcı disk kapalı
+        persistence:
+          enabled: false
+
+        # ---- Ek init container (volumePermissions) kapalı kalsın
+        volumePermissions:
+          enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: messaging
