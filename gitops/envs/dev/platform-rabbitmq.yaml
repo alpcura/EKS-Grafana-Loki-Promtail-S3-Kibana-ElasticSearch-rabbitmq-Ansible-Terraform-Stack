@@ -8,7 +8,6 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: messaging
-
   source:
     repoURL: https://charts.bitnami.com/bitnami
     chart: rabbitmq
@@ -16,29 +15,29 @@ spec:
     helm:
       releaseName: rabbitmq
       values: |
+        # İsimler sabit
         fullnameOverride: rabbitmq
 
+        # Kimlik
         auth:
           username: appuser
           password: apppassword
 
-        service:
-          type: ClusterIP
-
+        # Disk kapalı (demo)
         persistence:
           enabled: false
 
-        # --- ÖNEMLİ: GHCR ve doğrulama
-        global:
-          imageRegistry: ghcr.io
-          security:
-            allowInsecureImages: true
-
+        # ---- ÖNEMLİ: docker hub + var olan basit tag ----
         image:
-          registry: ghcr.io
+          registry: docker.io
           repository: bitnami/rabbitmq
-          tag: 4.0.6-debian-12-r3
+          tag: "4.0.6"
 
+        # Servis
+        service:
+          type: ClusterIP
+
+        # Ingress (ALB), hostsiz — ALB kendi DNS üretir
         ingress:
           enabled: true
           ingressClassName: alb
@@ -46,9 +45,9 @@ spec:
             alb.ingress.kubernetes.io/scheme: internet-facing
             alb.ingress.kubernetes.io/target-type: ip
             alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+            alb.ingress.kubernetes.io/healthcheck-path: /
           path: /
           pathType: Prefix
-
   syncPolicy:
     automated:
       prune: true
