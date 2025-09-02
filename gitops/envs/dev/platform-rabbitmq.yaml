@@ -21,14 +21,15 @@ spec:
           username: appuser
           password: apppassword
 
-        # Disk kapalı (demo)
         persistence:
           enabled: false
 
-        # --- REGISTRY'YI AWS PUBLIC ECR'A ZORLA ---
-        # GHCR/DockerHub yok; sadece bu mirror'ı kullan.
+        # ---- ÖNEMLİ: docker.io yerine AWS Public ECR mirror'u kullan
         global:
           imageRegistry: public.ecr.aws
+          security:
+            # Public ECR kullandığımız için Bitnami'nin image doğrulamasını geç
+            allowInsecureImages: true
 
         image:
           registry: public.ecr.aws
@@ -48,6 +49,7 @@ spec:
           path: /
           pathType: Prefix
           hostname: rabbitmq.dev.local
+
   syncPolicy:
     automated:
       prune: true
