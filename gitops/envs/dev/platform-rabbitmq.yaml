@@ -12,13 +12,15 @@ spec:
     helm:
       releaseName: rabbitmq
       values: |
-        fullnameOverride: rabbitmq
+        fullnameOverride: rabbitmq          # Servis adı kesin "rabbitmq" olsun
         auth:
           username: appuser
           password: apppassword
         service:
           type: ClusterIP
         persistence:
+          enabled: false
+        volumePermissions:                  # Init:ImagePullBackOff sebebini kapatıyoruz
           enabled: false
   destination:
     server: https://kubernetes.default.svc
@@ -28,4 +30,6 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-    - CreateNamespace=true
+      - CreateNamespace=true
+      # BUNU ekleyince immutable alan değişikliklerinde sil-yarat yapar:
+      - Replace=true
