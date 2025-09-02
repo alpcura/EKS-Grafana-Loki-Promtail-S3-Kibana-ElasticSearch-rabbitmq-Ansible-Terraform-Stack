@@ -7,4 +7,4 @@ patchesStrategicMerge:
   - replicas.yaml
 images:
   - name: mericalpp/eks-go-rmq
-    newTag: dev-1.0.0
+    newTag: 1.0.0
