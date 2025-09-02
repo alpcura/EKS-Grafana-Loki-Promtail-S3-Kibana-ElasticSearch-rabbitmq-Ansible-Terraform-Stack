@@ -12,40 +12,36 @@ spec:
     helm:
       releaseName: rabbitmq
       values: |
-        # ---- İsimleri sabitle
+        # Servis/PVC isimleri sabit
         fullnameOverride: rabbitmq
 
-        # ---- Tüm imajları GHCR'den çek
-        global:
-          imageRegistry: ghcr.io
-
-        # ---- Ana container imajını da net sabitle
-        image:
-          registry: ghcr.io
-          repository: bitnami/rabbitmq
-          tag: 4.0.6-debian-12-r3
-          pullPolicy: IfNotPresent
-
-        # ---- Yetkilendirme
+        # Kimlik bilgileri (demo)
         auth:
           username: appuser
           password: apppassword
 
-        # ---- Servis
+        # Servis tipi
         service:
           type: ClusterIP
 
-        # ---- Demo için kalıcı disk kapalı
+        # Demo: disk kalıcı değil
         persistence:
           enabled: false
 
-        # ---- Ek init container (volumePermissions) kapalı kalsın
-        volumePermissions:
-          enabled: false
+        # --- ÖNEMLİ: GHCR kullan ve imaj doğrulamasını aç ---
+        global:
+          imageRegistry: ghcr.io
+          security:
+            allowInsecureImages: true
+
+        # Ana RabbitMQ imajını net sabitle
+        image:
+          registry: ghcr.io
+          repository: bitnami/rabbitmq
+          tag: 4.0.6-debian-12-r3
   destination:
     server: https://kubernetes.default.svc
     namespace: messaging
-
   syncPolicy:
     automated:
       prune: true
