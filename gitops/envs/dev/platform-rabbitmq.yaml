@@ -1,51 +1,79 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Application
+# --- Secret (kullanıcı/şifre)
+apiVersion: v1
+kind: Secret
 metadata:
-  name: rabbitmq-dev
-  namespace: argocd
+  name: rabbitmq-auth
+  namespace: messaging
+type: Opaque
+stringData:
+  username: appuser
+  password: apppassword
+---
+# --- Headless Service (StatefulSet discovery)
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-headless
+  namespace: messaging
+  labels: { app: rabbitmq }
 spec:
-  project: default
-  source:
-    repoURL: https://charts.bitnami.com/bitnami
-    chart: rabbitmq
-    targetRevision: 15.3.2
-    helm:
-      releaseName: rabbitmq
-      values: |
-        # Servis/PVC isimleri sabit
-        fullnameOverride: rabbitmq
-
-        # Kimlik bilgileri (demo)
-        auth:
-          username: appuser
-          password: apppassword
-
-        # Servis tipi
-        service:
-          type: ClusterIP
-
-        # Demo: disk kalıcı değil
-        persistence:
-          enabled: false
-
-        # --- ÖNEMLİ: GHCR kullan ve imaj doğrulamasını aç ---
-        global:
-          imageRegistry: ghcr.io
-          security:
-            allowInsecureImages: true
-
-        # Ana RabbitMQ imajını net sabitle
-        image:
-          registry: ghcr.io
-          repository: bitnami/rabbitmq
-          tag: 4.0.6-debian-12-r3
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: messaging
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - Replace=true
+  clusterIP: None
+  selector: { app: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672 }
+    - { name: dist, port: 25672 }
+    - { name: epmd, port: 4369 }
+---
+# --- ClusterIP Service (uygulamaların bağlanacağı adres)
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: messaging
+  labels: { app: rabbitmq }
+spec:
+  type: ClusterIP
+  selector: { app: rabbitmq }
+  ports:
+    - { name: amqp,  port: 5672,  targetPort: 5672 }
+    - { name: mgmt,  port: 15672, targetPort: 15672 }
+---
+# --- StatefulSet (disksiz demo)
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: messaging
+spec:
+  serviceName: rabbitmq-headless
+  replicas: 1
+  selector:
+    matchLabels: { app: rabbitmq }
+  template:
+    metadata:
+      labels: { app: rabbitmq }
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management
+          ports:
+            - { containerPort: 5672 }
+            - { containerPort: 15672 }
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom: { secretKeyRef: { name: rabbitmq-auth, key: username } }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: rabbitmq-auth, key: password } }
+          readinessProbe:
+            httpGet: { path: /api/health/ready, port: 15672 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health/checks/alarms, port: 15672 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/rabbitmq }
+      volumes:
+        - name: data
+          emptyDir: {}    # demo amaçlı; prod’da PVC bağla
