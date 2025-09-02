@@ -8,8 +8,7 @@ spec:
   source:
     repoURL: https://charts.bitnami.com/bitnami
     chart: rabbitmq
-    # Üretimde pinleyin (ör. 15.3.2 gibi):
-    # targetRevision: 15.3.2
+    targetRevision: 15.3.2
     helm:
       values: |
         fullnameOverride: rabbitmq      # <— ÖNEMLİ: servis adı rabbitmq olsun
