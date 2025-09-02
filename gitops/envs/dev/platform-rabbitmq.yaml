@@ -21,17 +21,19 @@ spec:
           username: appuser
           password: apppassword
 
+        # Disk kapalı (demo)
         persistence:
           enabled: false
 
-        # --- ÖNEMLİ: GHCR'ı sıfırla, docker hub'a zorla
+        # --- REGISTRY'YI AWS PUBLIC ECR'A ZORLA ---
+        # GHCR/DockerHub yok; sadece bu mirror'ı kullan.
         global:
-          imageRegistry: ""              # ghcr kalıntısını sıfırlar
+          imageRegistry: public.ecr.aws
 
         image:
-          registry: docker.io
+          registry: public.ecr.aws
           repository: bitnami/rabbitmq
-          tag: "4.0.6"                   # mevcut, public tag
+          tag: "4.0.6-debian-12-r3"
 
         service:
           type: ClusterIP
@@ -45,6 +47,7 @@ spec:
             alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
           path: /
           pathType: Prefix
+          hostname: rabbitmq.dev.local
   syncPolicy:
     automated:
       prune: true
