@@ -5,6 +5,10 @@ metadata:
   namespace: argocd
 spec:
   project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: messaging
+
   source:
     repoURL: https://charts.bitnami.com/bitnami
     chart: rabbitmq
@@ -12,55 +16,38 @@ spec:
     helm:
       releaseName: rabbitmq
       values: |
-        # --- Kimlik (demo)
+        fullnameOverride: rabbitmq
+
         auth:
           username: appuser
           password: apppassword
 
-        # --- Disk kapalı (demo)
+        service:
+          type: ClusterIP
+
         persistence:
           enabled: false
 
-        # --- Tüm imajları GHCR'den çek + doğrulamayı aç
+        # --- ÖNEMLİ: GHCR ve doğrulama
         global:
           imageRegistry: ghcr.io
           security:
             allowInsecureImages: true
 
-        # --- Ana imajı da açıkça GHCR'a sabitle (init container'ı da etkiler)
         image:
           registry: ghcr.io
           repository: bitnami/rabbitmq
           tag: 4.0.6-debian-12-r3
 
-        # --- Kaynakları makul tut
-        resources:
-          requests:
-            cpu: 50m
-            memory: 128Mi
-          limits:
-            cpu: 200m
-            memory: 256Mi
-
-        # --- Ingress (AWS ALB)
-        service:
-          type: ClusterIP
-          ports:
-            amqp: 5672
-            manager: 15672
         ingress:
           enabled: true
           ingressClassName: alb
-          hostname: rabbitmq.dev.local
-          path: /
           annotations:
             alb.ingress.kubernetes.io/scheme: internet-facing
             alb.ingress.kubernetes.io/target-type: ip
             alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: messaging
+          path: /
+          pathType: Prefix
 
   syncPolicy:
     automated:
