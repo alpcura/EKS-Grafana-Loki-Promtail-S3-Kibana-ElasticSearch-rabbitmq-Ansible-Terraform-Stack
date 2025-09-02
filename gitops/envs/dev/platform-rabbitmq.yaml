@@ -15,29 +15,27 @@ spec:
     helm:
       releaseName: rabbitmq
       values: |
-        # İsimler sabit
         fullnameOverride: rabbitmq
 
-        # Kimlik
         auth:
           username: appuser
           password: apppassword
 
-        # Disk kapalı (demo)
         persistence:
           enabled: false
 
-        # ---- ÖNEMLİ: docker hub + var olan basit tag ----
+        # --- ÖNEMLİ: GHCR'ı sıfırla, docker hub'a zorla
+        global:
+          imageRegistry: ""              # ghcr kalıntısını sıfırlar
+
         image:
           registry: docker.io
           repository: bitnami/rabbitmq
-          tag: "4.0.6"
+          tag: "4.0.6"                   # mevcut, public tag
 
-        # Servis
         service:
           type: ClusterIP
 
-        # Ingress (ALB), hostsiz — ALB kendi DNS üretir
         ingress:
           enabled: true
           ingressClassName: alb
@@ -45,7 +43,6 @@ spec:
             alb.ingress.kubernetes.io/scheme: internet-facing
             alb.ingress.kubernetes.io/target-type: ip
             alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-            alb.ingress.kubernetes.io/healthcheck-path: /
           path: /
           pathType: Prefix
   syncPolicy:
