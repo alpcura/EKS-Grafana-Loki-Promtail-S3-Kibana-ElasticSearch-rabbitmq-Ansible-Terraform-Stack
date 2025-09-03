@@ -24,7 +24,6 @@ spec:
         persistence:
           enabled: false
 
-        # Image’ler AWS Public ECR’den
         global:
           imageRegistry: public.ecr.aws
           security:
@@ -35,16 +34,17 @@ spec:
           repository: bitnami/rabbitmq
           tag: "4.0.6-debian-12-r3"
 
-        # Yönetim UI (15672) dışarı açık
+        # UI/Ingress yok; içten kullanılacak
+        service:
+          type: ClusterIP
+
+        # UI portu yine açık, ama sadece cluster içinden erişilir
         extraConfiguration: |
           management.tcp.port = 15672
           management.tcp.ip   = 0.0.0.0
           loopback_users.guest = false
 
-        service:
-          type: ClusterIP
-
-        # HTTP yerine TCP healthcheck (opsiyonel)
+        # (İstersen kalabilir) TCP custom probe'lar
         customStartupProbe:
           tcpSocket: { port: 15672 }
           initialDelaySeconds: 60
@@ -63,30 +63,8 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 8
 
-
         ingress:
-          enabled: true
-          ingressClassName: alb
-          annotations:
-            kubernetes.io/ingress.class: alb
-            alb.ingress.kubernetes.io/scheme: internet-facing
-            alb.ingress.kubernetes.io/target-type: ip
-            alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
-          path: /
-          pathType: Prefix
-          extraRules:
-            - http:
-                paths:
-                  - path: /
-                    pathType: Prefix
-                    backend:
-                      service:
-                        name: rabbitmq
-                        port:
-                          name: http-stats
-                  
-       
-
+          enabled: false
   syncPolicy:
     automated:
       prune: true
