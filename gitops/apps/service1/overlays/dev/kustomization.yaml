@@ -1,7 +1,6 @@
 namespace: prod-api
 resources:
   - ../../base
-  - ingress.yaml
   - rabbitmq-url-secret.yaml
 patchesStrategicMerge:
   - replicas.yaml
