@@ -24,7 +24,6 @@ spec:
         persistence:
           enabled: false
 
-        # docker.io yerine AWS Public ECR mirror
         global:
           imageRegistry: public.ecr.aws
           security:
@@ -35,7 +34,6 @@ spec:
           repository: bitnami/rabbitmq
           tag: "4.0.6-debian-12-r3"
 
-        # Management'ı dışa bağla
         extraConfiguration: |
           management.tcp.port = 15672
           management.tcp.ip   = 0.0.0.0
@@ -43,30 +41,21 @@ spec:
 
         service:
           type: ClusterIP
-          ports:
-            amqp: 5672
-            dist: 25672
-            epmd: 4369
-            manager: 15672
-            metrics: 9419
 
-        # --- Probe’ları HTTP yerine TCP yap (Bitnami 'custom*Probe')
+        # --- HTTP yerine TCP custom probe'lar (opsiyonel, kalsın)
         customStartupProbe:
-          tcpSocket:
-            port: 15672
+          tcpSocket: { port: 15672 }
           initialDelaySeconds: 60
           periodSeconds: 10
           failureThreshold: 60
         customReadinessProbe:
-          tcpSocket:
-            port: 15672
+          tcpSocket: { port: 15672 }
           initialDelaySeconds: 90
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 60
         customLivenessProbe:
-          tcpSocket:
-            port: 15672
+          tcpSocket: { port: 15672 }
           initialDelaySeconds: 180
           periodSeconds: 30
           timeoutSeconds: 5
@@ -82,7 +71,17 @@ spec:
             alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
           path: /
           pathType: Prefix
-          hostname: ""
+          # host vermiyoruz; onun yerine extraRules ile kural ekliyoruz
+          extraRules:
+            - http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: rabbitmq
+                        port:
+                          name: http-stats
 
   syncPolicy:
     automated:
