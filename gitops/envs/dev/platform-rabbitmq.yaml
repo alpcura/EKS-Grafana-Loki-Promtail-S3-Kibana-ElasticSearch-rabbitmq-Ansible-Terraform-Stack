@@ -34,26 +34,67 @@ spec:
           repository: bitnami/rabbitmq
           tag: "4.0.6-debian-12-r3"
 
-        # UI yok; yalnızca iç kullanıma açık servis
+        # UI açık ama sadece cluster içi; dışa ALB yok
         service:
           type: ClusterIP
 
-        # Management plugin açık (iç ağ), ama probe'ları CHART'ın default'ına bırakıyoruz
         extraConfiguration: |
           management.tcp.port = 15672
           management.tcp.ip   = 0.0.0.0
           loopback_users.guest = false
 
-        # ÖNEMLİ: custom*Probe'ları tamamen kaldırıyoruz (describe'da görülen TCP 15672'ler gitsin)
+        # Bitnami default probe’ları açık; startup’ı biraz daha toleranslı yap
         startupProbe:
           enabled: true
+          initialDelaySeconds: 20
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 12
         readinessProbe:
           enabled: true
         livenessProbe:
           enabled: true
 
+        # ALB/Ingress yok
         ingress:
           enabled: false
+
+        # İki ayrı iç servis (AMQP) – uygulamalar bunlardan birini kullanabilir
+        extraDeploy:
+          - |
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: rabbitmq-svc-1
+              labels:
+                app.kubernetes.io/name: rabbitmq
+                app.kubernetes.io/instance: rabbitmq
+            spec:
+              type: ClusterIP
+              selector:
+                app.kubernetes.io/name: rabbitmq
+                app.kubernetes.io/instance: rabbitmq
+              ports:
+                - name: amqp
+                  port: 5672
+                  targetPort: amqp
+          - |
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: rabbitmq-svc-2
+              labels:
+                app.kubernetes.io/name: rabbitmq
+                app.kubernetes.io/instance: rabbitmq
+            spec:
+              type: ClusterIP
+              selector:
+                app.kubernetes.io/name: rabbitmq
+                app.kubernetes.io/instance: rabbitmq
+              ports:
+                - name: amqp
+                  port: 5672
+                  targetPort: amqp
   syncPolicy:
     automated:
       prune: true
