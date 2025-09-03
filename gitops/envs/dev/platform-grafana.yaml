@@ -3,8 +3,10 @@ kind: Application
 metadata:
   name: grafana-dev
   namespace: argocd
+  labels:
+    env: dev
 spec:
-  project: default
+  project: dev
   source:
     repoURL: https://grafana.github.io/helm-charts
     chart: grafana              # <-- griffin değil
