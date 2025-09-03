@@ -3,8 +3,10 @@ kind: Application
 metadata:
   name: root-staging
   namespace: argocd
+  labels:
+    env: dev
 spec:
-  project: default
+  project: dev
   source:
     repoURL: https://github.com/alpcura/EKS-Grafana-Loki-Promtail-S3-Kibana-ElasticSearch-rabbitmq-Ansible-Terraform-Stack.git
     targetRevision: HEAD
