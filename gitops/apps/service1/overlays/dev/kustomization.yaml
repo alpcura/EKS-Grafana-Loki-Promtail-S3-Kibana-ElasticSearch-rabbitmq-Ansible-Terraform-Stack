@@ -1,0 +1,9 @@
+namespace: prod-api
+resources:
+  - ../../base
+  - rabbitmq-url-secret.yaml
+patchesStrategicMerge:
+  - replicas.yaml
+images:
+  - name: mericalpp/eks-go-rmq
+    newTag: 1.0.0

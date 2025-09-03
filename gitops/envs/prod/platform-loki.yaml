@@ -1,0 +1,60 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki-prod
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 6.6.5
+    helm:
+      values: |
+        deploymentMode: SingleBinary
+        singleBinary:
+          replicas: 1
+
+        global:
+          storageClass: gp3-csi
+
+        serviceAccount:
+          create: true
+          annotations:
+            eks.amazonaws.com/role-arn: "arn:aws:iam::211125336427:role/project3-sbx-loki-irsa"
+
+        loki:
+          structuredConfig:
+            auth_enabled: false
+            server: { http_listen_port: 3100 }
+            common: { replication_factor: 1 }
+            storage_config:
+              aws:
+                s3: "s3://project3-logs-sbx-00dab2a1"
+                region: "us-east-1"
+                s3forcepathstyle: true
+            schema_config:
+              configs:
+                - from: "2025-01-01"
+                  store: tsdb
+                  object_store: s3
+                  schema: v13
+                  index: { prefix: loki_index_, period: 24h }
+
+          storage:
+            type: s3
+            bucketNames:
+              chunks: "project3-logs-sbx-00dab2a1"
+              ruler:  "project3-logs-sbx-00dab2a1"
+              admin:  "project3-logs-sbx-00dab2a1"
+
+        gateway: { enabled: true }
+        chunksCache:  { enabled: false }
+        resultsCache: { enabled: false }
+        ruler:        { enabled: false }
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
